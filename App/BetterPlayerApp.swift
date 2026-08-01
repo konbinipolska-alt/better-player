@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct BetterPlayerApp: App {
@@ -7,5 +8,6 @@ struct BetterPlayerApp: App {
             RootView()
                 .preferredColorScheme(.dark)
         }
+        .modelContainer(for: [Playlist.self, PlaylistItem.self])
     }
 }
