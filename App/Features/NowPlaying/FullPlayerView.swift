@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import DesignSystem
 
 /// Full Now Playing screen, presented when the pill is tapped. Minimal by design:
@@ -29,7 +30,7 @@ struct FullPlayerView: View {
     private var grabber: some View {
         Button { dismiss() } label: {
             Image(systemName: "chevron.down")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(DSColor.textSecondary)
                 .frame(width: 44, height: 44)
         }
@@ -40,11 +41,17 @@ struct FullPlayerView: View {
         RoundedRectangle(cornerRadius: DSRadius.card, style: .continuous)
             .fill(DSColor.surface)
             .aspectRatio(1, contentMode: .fit)
-            .overlay(
-                Image(systemName: "music.note")
-                    .font(.system(size: 64, weight: .light))
-                    .foregroundStyle(DSColor.textTertiary)
-            )
+            .overlay {
+                if let img = engine.artwork {
+                    Image(uiImage: img).resizable().scaledToFill()
+                        .hueRotation(.degrees(engine.track.artworkHue))
+                } else {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 64, weight: .light))
+                        .foregroundStyle(DSColor.textTertiary)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: DSRadius.card, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: DSRadius.card, style: .continuous)
                     .stroke(DSColor.hairline, lineWidth: DSStroke.hairline)
@@ -69,7 +76,7 @@ struct FullPlayerView: View {
                     .fill(DSColor.surfaceRaised)
                     .overlay(alignment: .leading) {
                         Capsule()
-                            .fill(DSColor.accent)
+                            .fill(DSColor.textPrimary)
                             .frame(width: engine.displayProgress * geo.size.width)
                     }
                     .frame(height: 6)
@@ -109,7 +116,7 @@ struct FullPlayerView: View {
     private func transportButton(_ name: String, size: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: name)
-                .font(.system(size: size, weight: .semibold))
+                .font(.system(size: size, weight: .medium))
                 .foregroundStyle(DSColor.textPrimary)
                 .frame(width: 64, height: 64)
         }

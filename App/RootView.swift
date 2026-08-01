@@ -35,14 +35,21 @@ struct RootView: View {
                 )
                 .padding(.top, DSSpacing.sm)
 
+                TimeReadout(engine: engine)
+
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .safeAreaInset(edge: .bottom) {
+            .background(DSColor.canvas.ignoresSafeArea())
+            .overlay(alignment: .bottom) {
+                // Dock the pill low: same margin from the bottom edge as from the
+                // sides (DSSpacing.md). Offsetting down by the bottom safe-area
+                // inset pushes it past the home-indicator gap so it truly sits low.
                 MiniPlayerPill(engine: engine, onTapExpand: { showFullPlayer = true })
                     .padding(.horizontal, DSSpacing.md)
-                    .padding(.bottom, DSSpacing.sm)
+                    .padding(.bottom, DSSpacing.md)
+                    .offset(y: geo.safeAreaInsets.bottom)
             }
             .contentShape(Rectangle())
             // Low-priority so the pill's own gesture (and any content) win their
@@ -56,7 +63,7 @@ struct RootView: View {
 
     @ViewBuilder private var content: some View {
         switch section {
-        case .playlists: PlaylistsView()
+        case .playlists: PlaylistsView(engine: engine)
         case .search: SearchView()
         case .nowPlaying: NowPlayingView()
         }
@@ -87,6 +94,22 @@ struct RootView: View {
                     withAnimation(DSMotion.standard) { section = next }
                 }
             }
+    }
+}
+
+/// Small, centred playback readout under the header: `current / total`. During a
+/// scrub the current side reflects the target position until the finger lifts.
+private struct TimeReadout: View {
+    let engine: PlayerEngine
+    var body: some View {
+        Text("\(Timecode.string(engine.displayTime)) / \(Timecode.string(engine.duration))")
+            .font(DSFont.monoSmall)
+            .foregroundStyle(DSColor.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, DSSpacing.xs)
+            // Only visible while scrubbing; kept in layout to avoid a jump.
+            .opacity(engine.isScrubbing ? 1 : 0)
+            .animation(.easeInOut(duration: 0.15), value: engine.isScrubbing)
     }
 }
 

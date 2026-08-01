@@ -10,4 +10,7 @@ struct NowPlayingTrack: Equatable, Identifiable {
     /// Bundled audio file base name (no extension), or nil once real catalog
     /// items back the player.
     let resource: String?
+    /// Hue rotation (degrees) applied to shared cover art so tracks sharing a
+    /// cover are still distinguishable at a glance. 0 = original colours.
+    var artworkHue: Double = 0
 }

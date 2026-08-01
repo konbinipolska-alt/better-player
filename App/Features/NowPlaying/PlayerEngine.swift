@@ -1,11 +1,11 @@
 import SwiftUI
+import UIKit
 import Observation
 import AVFoundation
 
-/// Drives playback for the UI. For local testing it plays bundled, procedurally
-/// generated samples through `AVAudioPlayer` — so scrubbing is *audible*. Phase 3
-/// swaps the audio source for `ApplicationMusicPlayer` (MusicKit) behind this
-/// same surface.
+/// Drives playback for the UI. For local testing it plays bundled audio through
+/// `AVAudioPlayer`. Phase 3 swaps the audio source for `ApplicationMusicPlayer`
+/// (MusicKit) behind this same surface.
 @MainActor
 @Observable
 final class PlayerEngine {
@@ -18,9 +18,18 @@ final class PlayerEngine {
     private(set) var scrubTargetTime: Double = 0
     private(set) var scrubRate: ScrubRate = .hiSpeed
 
+    /// Cover art for the current track (its own embedded art, else the shared cover).
+    private(set) var artwork: UIImage?
+    /// First embedded cover found — reused for tracks that carry no art of their own.
+    private(set) var fallbackArtwork: UIImage?
+
+    /// The playlist backing the player.
+    var tracks: [NowPlayingTrack] { queue }
+    /// Cover to show in list rows (the shared Konbini cover), tinted per track.
+    var sharedArtwork: UIImage? { fallbackArtwork ?? artwork }
+
     var duration: Double { player?.duration ?? 0 }
 
-    /// Fraction to render in the pill: the scrub target while scrubbing, else the playhead.
     var displayProgress: Double {
         guard duration > 0 else { return 0 }
         return max(0, min(1, displayTime / duration))
@@ -34,11 +43,10 @@ final class PlayerEngine {
     private let delegate = PlayerDelegate()
 
     init() {
-        queue = [
-            NowPlayingTrack(id: "1", title: "Nightlight",   artist: "Konbini", resource: "sample_nightlight"),
-            NowPlayingTrack(id: "2", title: "Amber Static", artist: "Konbini", resource: "sample_amber"),
-            NowPlayingTrack(id: "3", title: "Low Orbit",    artist: "Konbini", resource: "sample_orbit"),
-        ]
+        let found = Self.discoverTracks()
+        queue = found.isEmpty
+            ? [NowPlayingTrack(id: "none", title: "No audio", artist: "Konbini", resource: nil)]
+            : found
         track = queue[0]
         configureSession()
         delegate.onFinish = { [weak self] in self?.next() }
@@ -71,6 +79,12 @@ final class PlayerEngine {
         }
     }
 
+    /// Play a specific track from the playlist (tapped in the Playlists list).
+    func play(trackID: String) {
+        guard let i = queue.firstIndex(where: { $0.id == trackID }) else { return }
+        load(index: i, autoplay: true)
+    }
+
     // MARK: Scrubbing
 
     func beginScrub() {
@@ -79,14 +93,12 @@ final class PlayerEngine {
         scrubRate = .hiSpeed
     }
 
-    /// Incremental horizontal delta (points) at the current rate; rate tier from
-    /// upward vertical travel. Seeks the player live so the scrub is audible.
+    /// Update the scrub target only — the audio is NOT seeked here, so there's no
+    /// audible scrubbing. The seek happens once, on release (`endScrub`).
     func updateScrub(horizontalDelta: CGFloat, verticalUp: CGFloat, secondsPerPoint: Double) {
         scrubRate = ScrubRate.forVerticalOffset(verticalUp)
         let delta = Double(horizontalDelta) * secondsPerPoint * scrubRate.factor
         scrubTargetTime = max(0, min(duration, scrubTargetTime + delta))
-        player?.currentTime = scrubTargetTime
-        currentTime = scrubTargetTime
     }
 
     func endScrub(commit: Bool) {
@@ -111,7 +123,8 @@ final class PlayerEngine {
         track = queue[index]
 
         let url = track.resource.flatMap {
-            Bundle.main.url(forResource: $0, withExtension: "m4a")
+            Bundle.main.url(forResource: $0, withExtension: "mp3")
+                ?? Bundle.main.url(forResource: $0, withExtension: "m4a")
                 ?? Bundle.main.url(forResource: $0, withExtension: "wav")
         }
         if let url, let p = try? AVAudioPlayer(contentsOf: url) {
@@ -121,8 +134,55 @@ final class PlayerEngine {
         } else {
             player = nil
         }
+        artwork = fallbackArtwork          // show the shared cover immediately
+        if let url { loadArtwork(from: url) }
         currentTime = 0
         if autoplay { play() } else { isPlaying = false }
+    }
+
+    /// Builds the queue from any audio files bundled in the app (mp3/m4a/wav),
+    /// so adding your own tracks is just dropping files into App/Resources/Audio.
+    /// Tracks after the first get a distinct hue so a shared cover still reads
+    /// as different at a glance.
+    private static func discoverTracks() -> [NowPlayingTrack] {
+        var urls: [URL] = []
+        for ext in ["mp3", "m4a", "wav"] {
+            urls += Bundle.main.urls(forResourcesWithExtension: ext, subdirectory: nil) ?? []
+        }
+        let sorted = urls.sorted {
+            $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
+        }
+        return sorted.enumerated().map { idx, url in
+            let base = url.deletingPathExtension().lastPathComponent
+            let title = base
+                .replacingOccurrences(of: "-", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+            let hue = idx == 0 ? 0.0 : Double((idx * 150) % 360)
+            return NowPlayingTrack(id: base, title: title, artist: "Konbini",
+                                   resource: base, artworkHue: hue)
+        }
+    }
+
+    // MARK: Artwork
+
+    private func loadArtwork(from url: URL) {
+        Task { [weak self] in
+            let img = await Self.extractArtwork(AVURLAsset(url: url))
+            guard let self else { return }
+            if let img {
+                if self.fallbackArtwork == nil { self.fallbackArtwork = img }
+                self.artwork = img
+            } else {
+                self.artwork = self.fallbackArtwork
+            }
+        }
+    }
+
+    private nonisolated static func extractArtwork(_ asset: AVURLAsset) async -> UIImage? {
+        guard let items = try? await asset.load(.commonMetadata) else { return nil }
+        let art = AVMetadataItem.metadataItems(from: items, filteredByIdentifier: .commonIdentifierArtwork)
+        guard let item = art.first, let data = try? await item.load(.dataValue) else { return nil }
+        return UIImage(data: data)
     }
 
     private func configureSession() {

@@ -7,13 +7,14 @@ import DesignSystem
 /// - **tap** (left/centre) → expand to Now Playing; **tap** (over the button) → play/pause
 /// - **quick horizontal swipe** (finger lifts before the hold delay) → previous / next
 /// - **press-and-hold ~0.2s, then drag** → scrub: horizontal = seek, vertical (up) =
-///   speed multiplier tier; the finger may leave the pill and keep scrubbing;
-///   the pill morphs to a progress fill + target timecode; release commits.
+///   speed multiplier tier; the finger may leave the pill and keep scrubbing.
+///   During scrub the pill content stays put — only the progress fill sweeps and the
+///   small timecode reflects the target; audio is seeked once, on release.
 struct MiniPlayerPill: View {
     @Bindable var engine: PlayerEngine
     var onTapExpand: () -> Void = {}
 
-    private let height: CGFloat = 76
+    private let height: CGFloat = 68
     private let baseSecondsPerPoint: Double = 0.25
     private let holdDelay: TimeInterval = 0.2
 
@@ -36,14 +37,8 @@ struct MiniPlayerPill: View {
                     .frame(width: engine.displayProgress * geo.size.width)
                     .animation(engine.isScrubbing ? nil : DSMotion.quick, value: engine.displayProgress)
 
-                Group {
-                    if engine.isScrubbing {
-                        scrubbingContent
-                    } else {
-                        restingContent
-                    }
-                }
-                .padding(.horizontal, DSSpacing.sm)
+                restingContent
+                    .padding(.horizontal, DSSpacing.sm)
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(width: geo.size.width))
@@ -52,11 +47,9 @@ struct MiniPlayerPill: View {
         .clipShape(Capsule(style: .continuous))
         .overlay(
             Capsule(style: .continuous)
-                .stroke(engine.isScrubbing ? DSColor.accent.opacity(0.5) : DSColor.hairline,
-                        lineWidth: engine.isScrubbing ? 1 : DSStroke.hairline)
+                .stroke(DSColor.hairline, lineWidth: DSStroke.hairline)
         )
         .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
-        .animation(DSMotion.scrubMorph, value: engine.isScrubbing)
     }
 
     // MARK: Content
@@ -64,9 +57,9 @@ struct MiniPlayerPill: View {
     private var restingContent: some View {
         HStack(spacing: DSSpacing.md) {
             artwork
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(engine.track.title)
-                    .font(DSFont.headline)
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(DSColor.textPrimary)
                     .lineLimit(1)
                 Text(engine.track.artist)
@@ -82,42 +75,25 @@ struct MiniPlayerPill: View {
         }
     }
 
-    private var scrubbingContent: some View {
-        HStack(spacing: DSSpacing.md) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(engine.scrubRate.label)
-                    .font(DSFont.eyebrow)
-                    .tracking(1.2)
-                    .foregroundStyle(DSColor.accent)
-                Text("SCRUB")
-                    .font(DSFont.eyebrow)
-                    .tracking(1.2)
-                    .foregroundStyle(DSColor.textTertiary)
-            }
-            Spacer(minLength: DSSpacing.sm)
-            Text(Timecode.string(engine.scrubTargetTime))
-                .font(DSFont.monoLarge)
-                .foregroundStyle(DSColor.textPrimary)
-            Text("/ \(Timecode.string(engine.duration))")
-                .font(DSFont.monoSmall)
-                .foregroundStyle(DSColor.textTertiary)
-        }
-    }
-
     private var artwork: some View {
-        Circle()
-            .fill(DSColor.surfaceRaised)
-            .frame(width: 56, height: 56)
-            .overlay(
+        ZStack {
+            Circle().fill(DSColor.surfaceRaised)
+            if let img = engine.artwork {
+                Image(uiImage: img).resizable().scaledToFill()
+                    .hueRotation(.degrees(engine.track.artworkHue))
+            } else {
                 Image(systemName: "music.note")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(DSColor.textTertiary)
-            )
+            }
+        }
+        .frame(width: 56, height: 56)
+        .clipShape(Circle())
     }
 
     private var playButton: some View {
         Image(systemName: engine.isPlaying ? "pause.fill" : "play.fill")
-            .font(.system(size: 20, weight: .semibold))
+            .font(.system(size: 20, weight: .medium))
             .foregroundStyle(DSColor.textPrimary)
             .frame(width: 44, height: 44)
     }
