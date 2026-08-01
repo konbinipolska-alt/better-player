@@ -49,3 +49,5 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+        # Allow ProMotion displays to exceed 60fps for the pill ⇄ full morph.
+        CADisableMinimumFrameDurationOnPhone: true

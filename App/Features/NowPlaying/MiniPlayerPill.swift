@@ -12,6 +12,8 @@ import DesignSystem
 ///   small timecode reflects the target; audio is seeked once, on release.
 struct MiniPlayerPill: View {
     @Bindable var engine: PlayerEngine
+    /// Shared namespace for the pill-thumb ⇄ full-cover matched morph.
+    var morph: Namespace.ID? = nil
     var onTapExpand: () -> Void = {}
 
     private let height: CGFloat = 68
@@ -76,8 +78,12 @@ struct MiniPlayerPill: View {
     }
 
     private var artwork: some View {
-        ZStack {
-            Circle().fill(DSColor.surfaceRaised)
+        // A rounded-rect clip (r=28 on 56pt reads as a circle) so the matched
+        // morph into the full player's rounded cover crosses over cleanly — no
+        // circle→square shape pop.
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        return ZStack {
+            shape.fill(DSColor.surfaceRaised)
             if let img = engine.artwork {
                 Image(uiImage: img).resizable().scaledToFill()
                     .hueRotation(.degrees(engine.track.artworkHue))
@@ -88,7 +94,8 @@ struct MiniPlayerPill: View {
             }
         }
         .frame(width: 56, height: 56)
-        .clipShape(Circle())
+        .clipShape(shape)
+        .matchedArtwork(in: morph)
     }
 
     private var playButton: some View {
@@ -170,6 +177,22 @@ struct MiniPlayerPill: View {
         didScrub = false
         curWidth = 0
         lastWidth = 0
+    }
+}
+
+/// The id shared by the pill thumb and the full player's cover.
+let npArtworkMatchID = "np.artwork"
+
+extension View {
+    /// Applies the Now Playing artwork `matchedGeometryEffect` when a namespace
+    /// is available (no-op in isolated previews that don't supply one).
+    @ViewBuilder
+    func matchedArtwork(in ns: Namespace.ID?) -> some View {
+        if let ns {
+            matchedGeometryEffect(id: npArtworkMatchID, in: ns)
+        } else {
+            self
+        }
     }
 }
 

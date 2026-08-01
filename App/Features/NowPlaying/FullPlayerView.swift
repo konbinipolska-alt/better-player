@@ -2,17 +2,36 @@ import SwiftUI
 import UIKit
 import DesignSystem
 
-/// Full Now Playing screen, presented when the pill is tapped. Minimal by design:
-/// large artwork, a draggable scrub bar, and transport. Phase 4 will enrich it
-/// (queue, the same vertical-multiplier scrub as the pill).
+/// Full Now Playing screen. Reached by morphing the mini-player pill in place:
+/// the large cover shares a `matchedGeometryEffect` (`np.artwork`) with the
+/// pill thumb, so a single `DSMotion.expand` spring flies/scales it up. A
+/// downward drag interactively moves + scales the whole surface toward the pill
+/// (dimming and rounding its corners as it goes); releasing past a threshold —
+/// or tapping the chevron — collapses back with the same spring, while a
+/// release under threshold snaps back to full. The drag is continuous and
+/// interruptible (it can reverse before release).
 struct FullPlayerView: View {
     @Bindable var engine: PlayerEngine
-    @Environment(\.dismiss) private var dismiss
+    /// Shared namespace for the matched cover morph.
+    var morph: Namespace.ID? = nil
+    /// Collapse back to the docked pill (parent flips `isExpanded` with a spring).
+    var collapse: () -> Void = {}
+
     @State private var isDraggingBar = false
+    @State private var dragOffset: CGFloat = 0
+
+    /// Drag distance past which release collapses.
+    private let collapseThreshold: CGFloat = 120
+    /// Distance mapped to full (1.0) collapse progress for the interactive transform.
+    private let dragSpan: CGFloat = 620
+
+    private var progress: CGFloat { min(1, max(0, dragOffset / dragSpan)) }
 
     var body: some View {
         ZStack {
-            DSColor.canvas.ignoresSafeArea()
+            DSColor.canvas
+                .ignoresSafeArea()
+                .opacity(1 - progress * 0.4)   // dim as it shrinks toward the pill
             VStack(spacing: DSSpacing.xl) {
                 grabber
                 Spacer()
@@ -24,15 +43,45 @@ struct FullPlayerView: View {
             }
             .padding(DSSpacing.xl)
         }
-        .presentationBackground(DSColor.canvas)
+        // Interactive collapse transform — the whole surface tracks the finger.
+        .scaleEffect(1 - progress * 0.12, anchor: .top)
+        .offset(y: dragOffset)
+        .clipShape(RoundedRectangle(cornerRadius: progress * 40, style: .continuous))
+        .gesture(collapseDrag)
+    }
+
+    // MARK: Interactive collapse
+
+    private var collapseDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { v in
+                // Downward only; a slight rubber-band lets it reverse smoothly.
+                dragOffset = max(0, v.translation.height)
+            }
+            .onEnded { v in
+                let flungDown = v.predictedEndTranslation.height > 500
+                if v.translation.height > collapseThreshold || flungDown {
+                    // Collapse: parent removes this view with DSMotion.expand and
+                    // the matched cover flies back into the pill. Keep the current
+                    // offset so the fading surface reads as continuing downward.
+                    collapse()
+                } else {
+                    withAnimation(DSMotion.expand) { dragOffset = 0 }
+                }
+            }
     }
 
     private var grabber: some View {
-        Button { dismiss() } label: {
-            Image(systemName: "chevron.down")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(DSColor.textSecondary)
-                .frame(width: 44, height: 44)
+        VStack(spacing: DSSpacing.md) {
+            Capsule()
+                .fill(DSColor.textTertiary.opacity(0.6))
+                .frame(width: 36, height: 5)
+            Button { collapse() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(DSColor.textSecondary)
+                    .frame(width: 44, height: 44)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
@@ -56,6 +105,7 @@ struct FullPlayerView: View {
                 RoundedRectangle(cornerRadius: DSRadius.card, style: .continuous)
                     .stroke(DSColor.hairline, lineWidth: DSStroke.hairline)
             )
+            .matchedArtwork(in: morph)
     }
 
     private var titles: some View {
