@@ -17,7 +17,15 @@ struct PlaylistDetailView: View {
     @State private var editingName = ""
     @FocusState private var nameFocused: Bool
 
+    /// Observe the Favorites playlist so the per-row toggle icon (and the
+    /// dashboard's "N songs" count) update the instant membership changes.
+    @Query(filter: #Predicate<Playlist> { $0.isFavorites }) private var favorites: [Playlist]
+
     private var store: PlaylistStore { PlaylistStore(context) }
+
+    private var favoriteIDs: Set<String> {
+        Set(favorites.first?.items.map(\.catalogID) ?? [])
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -91,7 +99,9 @@ struct PlaylistDetailView: View {
                         engine: engine,
                         item: item,
                         isCurrent: isCurrent(item),
-                        onTap: { play(item) }
+                        isFavorite: favoriteIDs.contains(item.catalogID),
+                        onTap: { play(item) },
+                        onToggleFavorite: { toggleFavorite(item) }
                     )
                     if item.id != items.last?.id {
                         DSDivider().padding(.leading, 76)
@@ -163,6 +173,10 @@ struct PlaylistDetailView: View {
         }
         // else: no matching engine track yet — no-op for now.
     }
+
+    private func toggleFavorite(_ item: PlaylistItem) {
+        store.toggleFavorite(catalogID: item.catalogID, title: item.title, artist: item.artist)
+    }
 }
 
 /// Track row reusing the Playlists visual: circular thumb + title/artist, with
@@ -171,10 +185,13 @@ private struct TrackRowView: View {
     let engine: PlayerEngine
     let item: PlaylistItem
     let isCurrent: Bool
+    let isFavorite: Bool
     let onTap: () -> Void
+    let onToggleFavorite: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
+        HStack(spacing: DSSpacing.md) {
+            // Row body: tapping anywhere here plays the track.
             HStack(spacing: DSSpacing.md) {
                 thumb
                 VStack(alignment: .leading, spacing: 2) {
@@ -188,13 +205,27 @@ private struct TrackRowView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: DSSpacing.sm)
-                if isCurrent {
-                    PlayingIndicator(engine: engine)
-                }
             }
-            .padding(.horizontal, DSSpacing.xl)
-            .padding(.vertical, DSSpacing.sm)
             .contentShape(Rectangle())
+            .onTapGesture { onTap() }
+
+            // Trailing slot: favorite add/remove toggle (its own hit target).
+            favoriteToggle
+        }
+        .padding(.horizontal, DSSpacing.xl)
+        .padding(.vertical, DSSpacing.sm)
+    }
+
+    private var favoriteToggle: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onToggleFavorite()
+        } label: {
+            Image(systemName: isFavorite ? "checkmark" : "plus")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isFavorite ? DSColor.textPrimary : DSColor.textTertiary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -209,6 +240,11 @@ private struct TrackRowView: View {
                 Image(systemName: "music.note")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(DSColor.textTertiary)
+            }
+            // Currently-playing row: dim the thumb and overlay the equalizer.
+            if isCurrent {
+                Color.black.opacity(0.35)
+                PlayingIndicator(engine: engine)
             }
         }
         .frame(width: 40, height: 40)
