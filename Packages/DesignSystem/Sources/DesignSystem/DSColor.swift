@@ -12,6 +12,8 @@ public enum DSColor {
     public static let surfaceRaised = Color(hex: "#1A1A1A")
     /// Scrub progress fill: pill background (#111111) lightened ~15%.
     public static let progressFill = Color(hex: "#2A2A2A")
+    /// Progress fill for the frosted-glass pill — a light sweep readable over blur.
+    public static let progressGlass = Color.white.opacity(0.14)
     /// Hairline dividers / borders.
     public static let hairline = Color(hex: "#262626")
 

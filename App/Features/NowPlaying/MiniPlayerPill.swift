@@ -32,8 +32,8 @@ struct MiniPlayerPill: View {
             ZStack(alignment: .leading) {
                 Rectangle().fill(.ultraThinMaterial)
 
-                // Progress = a slightly lighter fill over the glass, up to the point.
-                DSColor.progressFill.opacity(0.7)
+                // Progress = a light sweep over the glass, up to the (scrub or live) point.
+                DSColor.progressGlass
                     .frame(width: engine.displayProgress * geo.size.width)
                     .animation(engine.isScrubbing ? nil : DSMotion.quick, value: engine.displayProgress)
 
@@ -49,7 +49,7 @@ struct MiniPlayerPill: View {
             Capsule(style: .continuous)
                 .stroke(DSColor.hairline, lineWidth: DSStroke.hairline)
         )
-        .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
+        .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
     }
 
     // MARK: Content
