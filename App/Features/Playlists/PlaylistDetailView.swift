@@ -22,6 +22,15 @@ struct PlaylistDetailView: View {
     @State private var isReordering = false
     @State private var hasMoved = false
 
+    /// Rows in the pending-delete cooldown. `pendingDeadlines` drives each row's
+    /// countdown ring; `pendingTasks` holds the timer we cancel on undo. Keyed by
+    /// `PlaylistItem.id` so multiple rows can count down independently.
+    @State private var pendingDeadlines: [UUID: Date] = [:]
+    @State private var pendingTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// Cooldown before a swiped row is actually removed.
+    private let deleteCooldown: TimeInterval = 3
+
     /// Observe the Favorites playlist so the per-row toggle icon (and the
     /// dashboard's "N songs" count) update the instant membership changes.
     @Query(filter: #Predicate<Playlist> { $0.isFavorites }) private var favorites: [Playlist]
@@ -142,15 +151,23 @@ struct PlaylistDetailView: View {
         return List {
             ForEach(items) { item in
                 VStack(spacing: 0) {
-                    TrackRowView(
-                        engine: engine,
-                        item: item,
-                        isCurrent: isCurrent(item),
-                        isFavorite: favoriteIDs.contains(item.catalogID),
-                        isReordering: isReordering,
-                        onTap: { play(item) },
-                        onToggleFavorite: { toggleFavorite(item) }
-                    )
+                    if let deadline = pendingDeadlines[item.id] {
+                        PendingDeleteRow(
+                            deadline: deadline,
+                            duration: deleteCooldown,
+                            onUndo: { cancelPendingDelete(item.id) }
+                        )
+                    } else {
+                        TrackRowView(
+                            engine: engine,
+                            item: item,
+                            isCurrent: isCurrent(item),
+                            isFavorite: favoriteIDs.contains(item.catalogID),
+                            isReordering: isReordering,
+                            onTap: { play(item) },
+                            onToggleFavorite: { toggleFavorite(item) }
+                        )
+                    }
                     if item.id != items.last?.id {
                         DSDivider().padding(.leading, 76)
                     }
@@ -158,6 +175,17 @@ struct PlaylistDetailView: View {
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+                // Trailing full-swipe → pending-delete (never a direct removal).
+                // Disabled in reorder mode and once the row is already pending.
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    if !isReordering && pendingDeadlines[item.id] == nil {
+                        Button(role: .destructive) {
+                            beginPendingDelete(item)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
             }
             .onMove(perform: moveRows)
 
@@ -216,6 +244,38 @@ struct PlaylistDetailView: View {
         hasMoved = true
     }
 
+    // MARK: Pending delete
+
+    /// Put the row into the cooldown state and schedule the real removal after
+    /// `deleteCooldown` seconds. Undo cancels the task before it fires.
+    private func beginPendingDelete(_ item: PlaylistItem) {
+        let id = item.id
+        guard pendingDeadlines[id] == nil else { return }
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+
+        withAnimation(DSMotion.quick) {
+            pendingDeadlines[id] = Date().addingTimeInterval(deleteCooldown)
+        }
+
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(deleteCooldown * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            pendingTasks[id] = nil
+            pendingDeadlines[id] = nil
+            store.removeItem(item)
+        }
+        pendingTasks[id] = task
+    }
+
+    private func cancelPendingDelete(_ id: UUID) {
+        pendingTasks[id]?.cancel()
+        pendingTasks[id] = nil
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(DSMotion.quick) {
+            pendingDeadlines[id] = nil
+        }
+    }
+
     // MARK: Actions
 
     private func beginRename() {
@@ -263,6 +323,67 @@ struct PlaylistDetailView: View {
     }
 }
 
+/// The cooldown strip shown in place of a row's content while a delete is
+/// pending: a depleting countdown ring on the left, a muted "Removing" label,
+/// and an Undo button on the right. `TimelineView(.animation)` drives both the
+/// ring trim and the whole-second readout smoothly off a single deadline.
+private struct PendingDeleteRow: View {
+    let deadline: Date
+    let duration: TimeInterval
+    let onUndo: () -> Void
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let remaining = max(0, deadline.timeIntervalSince(context.date))
+            let progress = duration > 0 ? min(1, max(0, remaining / duration)) : 0
+
+            HStack(spacing: DSSpacing.md) {
+                ring(progress: progress, remaining: remaining)
+
+                Text("Removing")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(DSColor.textSecondary)
+
+                Spacer(minLength: DSSpacing.sm)
+
+                Button(action: onUndo) {
+                    HStack(spacing: DSSpacing.xs) {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text("Undo")
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(DSColor.textPrimary)
+                    .padding(.horizontal, DSSpacing.md)
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, DSSpacing.xl)
+            .padding(.vertical, DSSpacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DSColor.surfaceRaised)
+        }
+    }
+
+    private func ring(progress: Double, remaining: TimeInterval) -> some View {
+        ZStack {
+            Circle()
+                .stroke(DSColor.hairline, lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(DSColor.textPrimary,
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(Int(ceil(remaining)))")
+                .font(DSFont.monoSmall)
+                .foregroundStyle(DSColor.textSecondary)
+                .monospacedDigit()
+        }
+        .frame(width: 28, height: 28)
+    }
+}
+
 /// Track row reusing the Playlists visual: circular thumb + title/artist, with
 /// the animated equalizer on the currently-playing row.
 private struct TrackRowView: View {
@@ -278,23 +399,30 @@ private struct TrackRowView: View {
 
     var body: some View {
         HStack(spacing: DSSpacing.md) {
-            // Row body: tapping anywhere here plays the track (disabled while reordering).
-            HStack(spacing: DSSpacing.md) {
-                thumb
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(isCurrent ? DSColor.textPrimary : DSColor.textSecondary)
-                        .lineLimit(1)
-                    Text(item.artist)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(DSColor.textTertiary)
-                        .lineLimit(1)
+            // Row body: tapping anywhere here plays the track (disabled while
+            // reordering). A `Button` (rather than `.onTapGesture`) is used so the
+            // List's trailing `swipeActions` pan is not swallowed by the gesture.
+            Button {
+                onTap()
+            } label: {
+                HStack(spacing: DSSpacing.md) {
+                    thumb
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(isCurrent ? DSColor.textPrimary : DSColor.textSecondary)
+                            .lineLimit(1)
+                        Text(item.artist)
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(DSColor.textTertiary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: DSSpacing.sm)
                 }
-                Spacer(minLength: DSSpacing.sm)
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
-            .onTapGesture { if !isReordering { onTap() } }
+            .buttonStyle(.plain)
+            .disabled(isReordering)
 
             // Trailing slot: favorite add/remove toggle (hidden while reordering).
             if !isReordering {
