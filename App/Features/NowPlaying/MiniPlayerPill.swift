@@ -30,10 +30,10 @@ struct MiniPlayerPill: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                DSColor.surface
+                Rectangle().fill(.ultraThinMaterial)
 
-                // Progress = pill background lightened ~15%, up to the (scrub or live) point.
-                DSColor.progressFill
+                // Progress = a slightly lighter fill over the glass, up to the point.
+                DSColor.progressFill.opacity(0.7)
                     .frame(width: engine.displayProgress * geo.size.width)
                     .animation(engine.isScrubbing ? nil : DSMotion.quick, value: engine.displayProgress)
 

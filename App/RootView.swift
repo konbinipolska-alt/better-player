@@ -43,13 +43,13 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DSColor.canvas.ignoresSafeArea())
             .overlay(alignment: .bottom) {
-                // Dock the pill low: same margin from the bottom edge as from the
-                // sides (DSSpacing.md). Offsetting down by the bottom safe-area
-                // inset pushes it past the home-indicator gap so it truly sits low.
-                MiniPlayerPill(engine: engine, onTapExpand: { showFullPlayer = true })
-                    .padding(.horizontal, DSSpacing.md)
-                    .padding(.bottom, DSSpacing.md)
-                    .offset(y: geo.safeAreaInsets.bottom)
+                ZStack(alignment: .bottom) {
+                    BottomScrim(height: 112)   // pill bottom(20) + height(68) + 24pt fade-out
+                    MiniPlayerPill(engine: engine, onTapExpand: { showFullPlayer = true })
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.bottom, 20)
+                }
+                .offset(y: geo.safeAreaInsets.bottom)
             }
             .contentShape(Rectangle())
             // Low-priority so the pill's own gesture (and any content) win their
@@ -110,6 +110,28 @@ private struct TimeReadout: View {
             // Only visible while scrubbing; kept in layout to avoid a jump.
             .opacity(engine.isScrubbing ? 1 : 0)
             .animation(.easeInOut(duration: 0.15), value: engine.isScrubbing)
+    }
+}
+
+/// Bottom scrim behind the pill: the background colour fades in from the very
+/// bottom to transparent, with a progressive background blur that is strongest
+/// at the bottom and gone by ~24pt above the pill. Decorative; ignores touches.
+private struct BottomScrim: View {
+    let height: CGFloat
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .mask(
+                    LinearGradient(colors: [.black, .clear],
+                                   startPoint: .bottom, endPoint: .top)
+                )
+            LinearGradient(colors: [DSColor.canvas, DSColor.canvas.opacity(0)],
+                           startPoint: .bottom, endPoint: .top)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .allowsHitTesting(false)
     }
 }
 

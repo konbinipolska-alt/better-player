@@ -2,29 +2,28 @@ import SwiftUI
 import UIKit
 import DesignSystem
 
-/// The single current playlist ("Konbini") listing the bundled tracks. Tapping a
-/// row plays that track; the current one reads brighter and its waveform icon
-/// animates while playing.
+/// The current "Konbini" playlist. The engine's queue repeats the tracks
+/// (each with a unique id) so the list is long enough to scroll; only the
+/// actually-playing row is marked and shows the animated equalizer.
 struct PlaylistsView: View {
     let engine: PlayerEngine
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 header
                 ForEach(engine.tracks) { track in
-                    let current = track.id == engine.track.id
                     TrackRow(
+                        engine: engine,
                         track: track,
                         artwork: engine.sharedArtwork,
-                        isCurrent: current,
-                        isPlaying: current && engine.isPlaying,
-                        onTap: { engine.play(trackID: track.id) }
+                        isCurrent: track.id == engine.track.id,
+                        onTap: { engine.play(itemID: track.id) }
                     )
                     DSDivider().padding(.leading, 76)
                 }
             }
-            .padding(.bottom, 140)
+            .padding(.bottom, 160)
         }
     }
 
@@ -43,10 +42,10 @@ struct PlaylistsView: View {
 }
 
 private struct TrackRow: View {
+    let engine: PlayerEngine
     let track: NowPlayingTrack
     let artwork: UIImage?
     let isCurrent: Bool
-    let isPlaying: Bool
     let onTap: () -> Void
 
     var body: some View {
@@ -65,10 +64,7 @@ private struct TrackRow: View {
                 }
                 Spacer(minLength: DSSpacing.sm)
                 if isCurrent {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(DSColor.textPrimary)
-                        .symbolEffect(.variableColor.iterative, isActive: isPlaying)
+                    PlayingIndicator(engine: engine)
                 }
             }
             .padding(.horizontal, DSSpacing.xl)

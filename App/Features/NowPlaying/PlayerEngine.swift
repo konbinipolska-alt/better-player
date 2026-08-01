@@ -23,6 +23,9 @@ final class PlayerEngine {
     /// First embedded cover found — reused for tracks that carry no art of their own.
     private(set) var fallbackArtwork: UIImage?
 
+    /// Live audio level (0…1, peak) driving the playing indicator's beat pulse.
+    private(set) var level: Double = 0
+
     /// The playlist backing the player.
     var tracks: [NowPlayingTrack] { queue }
     /// Cover to show in list rows (the shared Konbini cover), tinted per track.
@@ -43,10 +46,18 @@ final class PlayerEngine {
     private let delegate = PlayerDelegate()
 
     init() {
-        let found = Self.discoverTracks()
-        queue = found.isEmpty
-            ? [NowPlayingTrack(id: "none", title: "No audio", artist: "Konbini", resource: nil)]
-            : found
+        let base = Self.discoverTracks()
+        if base.isEmpty {
+            queue = [NowPlayingTrack(id: "none", title: "No audio", artist: "Konbini", resource: nil)]
+        } else {
+            // Repeat the tracks (alternating) into a longer, scrollable playlist —
+            // each item gets a UNIQUE id so only the actually-playing row is marked.
+            queue = (0..<24).map { i in
+                let t = base[i % base.count]
+                return NowPlayingTrack(id: "\(t.id)#\(i)", title: t.title, artist: t.artist,
+                                       resource: t.resource, artworkHue: t.artworkHue)
+            }
+        }
         track = queue[0]
         configureSession()
         delegate.onFinish = { [weak self] in self?.next() }
@@ -80,8 +91,8 @@ final class PlayerEngine {
     }
 
     /// Play a specific track from the playlist (tapped in the Playlists list).
-    func play(trackID: String) {
-        guard let i = queue.firstIndex(where: { $0.id == trackID }) else { return }
+    func play(itemID: String) {
+        guard let i = queue.firstIndex(where: { $0.id == itemID }) else { return }
         load(index: i, autoplay: true)
     }
 
@@ -129,6 +140,7 @@ final class PlayerEngine {
         }
         if let url, let p = try? AVAudioPlayer(contentsOf: url) {
             p.delegate = delegate
+            p.isMeteringEnabled = true
             p.prepareToPlay()
             player = p
         } else {
@@ -137,6 +149,7 @@ final class PlayerEngine {
         artwork = fallbackArtwork          // show the shared cover immediately
         if let url { loadArtwork(from: url) }
         currentTime = 0
+        level = 0
         if autoplay { play() } else { isPlaying = false }
     }
 
@@ -206,6 +219,13 @@ final class PlayerEngine {
         guard let p = player, !isScrubbing else { return }
         currentTime = p.currentTime
         if isPlaying != p.isPlaying { isPlaying = p.isPlaying }
+        if p.isPlaying {
+            p.updateMeters()
+            let peak = Double(p.peakPower(forChannel: 0))   // dB, ~-160…0
+            level = max(0, min(1, (peak + 40) / 40))
+        } else if level != 0 {
+            level = 0
+        }
     }
 }
 
