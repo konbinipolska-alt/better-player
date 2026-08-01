@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+
+# XcodeGen — project.yml is the source of truth; the generated project can be
+# recreated with `xcodegen generate`. Kept out of version control to avoid churn.
+BetterPlayer.xcodeproj/
