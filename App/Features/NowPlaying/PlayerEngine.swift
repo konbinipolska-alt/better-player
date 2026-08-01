@@ -27,6 +27,9 @@ final class PlayerEngine {
     /// prior behavior (wrap to the start at the end).
     var playbackMode: PlaybackMode = .loopAll
 
+    var isShuffling: Bool { playbackMode == .shuffle }
+    var isLoopingOne: Bool { playbackMode == .loopOne }
+
     // Scrub state.
     private(set) var isScrubbing = false
     private(set) var scrubTargetTime: Double = 0

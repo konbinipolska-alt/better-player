@@ -28,6 +28,11 @@ struct PlaylistDetailView: View {
     @State private var pendingDeadlines: [UUID: Date] = [:]
     @State private var pendingTasks: [UUID: Task<Void, Never>] = [:]
 
+    // Artist / Album presentation (modal sheet with internal navigation).
+    @State private var showArtistSheet = false
+    @State private var artistNameForSheet: String = ""
+    @State private var initialAlbumForSheet: String? = nil
+
     /// Cooldown before a swiped row is actually removed.
     private let deleteCooldown: TimeInterval = 3
 
@@ -64,6 +69,12 @@ struct PlaylistDetailView: View {
         .background(DSColor.canvas.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showArtistSheet) {
+            ArtistView(artistName: artistNameForSheet, initialAlbumName: initialAlbumForSheet) {
+                showArtistSheet = false
+            }
+            .preferredColorScheme(.dark)
+        }
     }
 
     // MARK: Header
@@ -184,6 +195,17 @@ struct PlaylistDetailView: View {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                    }
+                }
+                .contextMenu {
+                    Button(action: { toggleFavorite(item) }) {
+                        Label(favoriteIDs.contains(item.catalogID) ? "Remove from Favorites" : "Add to Favorites", systemImage: favoriteIDs.contains(item.catalogID) ? "heart.slash" : "heart")
+                    }
+                    Button(action: { createNewPlaylistAndAdd(item) }) {
+                        Label("New playlist and add", systemImage: "text.badge.plus")
+                    }
+                    Button(action: { openAlbum(for: item) }) {
+                        Label("Go to album", systemImage: "square.stack")
                     }
                 }
             }
@@ -474,5 +496,26 @@ private struct TrackRowView: View {
         engine.tracks.first {
             $0.id == item.catalogID || $0.id.hasPrefix(item.catalogID + "#")
         }?.artworkHue ?? 0
+    }
+}
+
+extension PlaylistDetailView {
+    private func createNewPlaylistAndAdd(_ item: PlaylistItem) {
+        let name = suggestedNewPlaylistName()
+        let p = store.createPlaylist(name: name)
+        store.addItem(item, to: p)
+    }
+
+    private func suggestedNewPlaylistName() -> String {
+        let base = "New Playlist"
+        // Very simple disambiguation; a more robust approach would check existing by name.
+        let suffix = Int.random(in: 100...999)
+        return "\(base) \(suffix)"
+    }
+
+    private func openAlbum(for item: PlaylistItem) {
+        artistNameForSheet = item.artist
+        initialAlbumForSheet = nil // Unknown for now; user can pick in the artist view.
+        showArtistSheet = true
     }
 }

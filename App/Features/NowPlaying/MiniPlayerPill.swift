@@ -41,6 +41,14 @@ struct MiniPlayerPill: View {
 
                 restingContent
                     .padding(.horizontal, DSSpacing.sm)
+
+                // Explicit bottom progress bar for stronger visibility on all backgrounds.
+                VStack { Spacer(minLength: 0)
+                    Capsule()
+                        .fill(DSColor.textPrimary.opacity(0.25))
+                        .frame(width: max(0, engine.displayProgress) * geo.size.width, height: 2)
+                        .animation(engine.isScrubbing ? nil : DSMotion.quick, value: engine.displayProgress)
+                }
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(width: geo.size.width))

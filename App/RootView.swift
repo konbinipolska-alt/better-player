@@ -14,7 +14,9 @@ struct RootView: View {
     @Environment(\.modelContext) private var context
 
     @State private var engine = PlayerEngine()
+    @State private var auth = MusicAuthManager()
     @State private var isExpanded = false
+    @State private var showWelcome = true
     @Namespace private var morph
 
     var body: some View {
@@ -46,10 +48,27 @@ struct RootView: View {
                     })
                     .transition(.opacity)
                 }
+
+                // Welcome overlay: fades away shortly after launch.
+                if showWelcome {
+                    WelcomeWarpView {
+                        withAnimation(.easeInOut(duration: 0.4)) { showWelcome = false }
+                    }
+                    .transition(.opacity)
+                }
             }
         }
         .task {
             PlaylistStore(context).seedIfNeeded()
+        }
+        .sheet(isPresented: .constant(auth.shouldPrompt && !isExpanded)) {
+            MusicAuthView(auth: auth) {
+                // Dismiss handled by the presenting condition when status updates.
+            }
+            .preferredColorScheme(.dark)
+        }
+        .task { @MainActor in
+            auth.refreshStatus()
         }
     }
 }

@@ -7,11 +7,23 @@ import DesignSystem
 /// The search icon enters an in-place search mode on this same screen.
 struct PlaylistsDashboardView: View {
     let engine: PlayerEngine
+    @Environment(\.modelContext) private var context
 
     @Query(sort: \Playlist.order, order: .forward) private var playlists: [Playlist]
+    @Query private var allItems: [PlaylistItem]
 
     @State private var isSearching = false
     @State private var query = ""
+
+    private var searchResults: [PlaylistItem] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let lower = q.lowercased()
+        return allItems.filter { item in
+            item.title.lowercased().contains(lower) || item.artist.lowercased().contains(lower)
+        }.sorted { a, b in a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending }
+    }
+
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -22,9 +34,20 @@ struct PlaylistsDashboardView: View {
                 .padding(.bottom, DSSpacing.lg)
 
             if isSearching {
-                // Results area is intentionally empty for now (Apple Music wiring
-                // is a later slice).
-                Spacer()
+                if query.isEmpty {
+                    // Empty state: show only the header with blinking caret (already rendered above).
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(searchResults, id: \.id) { item in
+                                SearchResultRow(item: item)
+                                DSDivider().padding(.leading, DSSpacing.xl)
+                            }
+                        }
+                        .padding(.bottom, 160)
+                    }
+                }
             } else {
                 list
             }
@@ -152,5 +175,66 @@ struct BlinkingCaret: View {
                     on = false
                 }
             }
+    }
+}
+
+/// One search result row: track title + artist, with a trailing add/remove toggle to Favorites.
+private struct SearchResultRow: View {
+    @Environment(\.modelContext) private var context
+    let item: PlaylistItem
+
+    var body: some View {
+        HStack(spacing: DSSpacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(DSFont.headline)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .lineLimit(1)
+                Text(item.artist)
+                    .font(DSFont.monoSmall)
+                    .foregroundStyle(DSColor.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            FavoriteToggle(catalogID: item.catalogID, title: item.title, artist: item.artist)
+        }
+        .padding(.horizontal, DSSpacing.xl)
+        .padding(.vertical, DSSpacing.md)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Heart toggle that adds/removes a track from the Favorites playlist.
+private struct FavoriteToggle: View {
+    @Environment(\.modelContext) private var context
+    let catalogID: String
+    let title: String
+    let artist: String
+
+    @State private var isFav: Bool = false
+
+    var body: some View {
+        let store = PlaylistStore(context)
+        // Keep local state in sync on appear.
+        let _ = _onAppearUpdate()
+        Button {
+            store.toggleFavorite(catalogID: catalogID, title: title, artist: artist)
+            isFav = store.isFavorite(catalogID: catalogID)
+        } label: {
+            Image(systemName: isFav ? "heart.fill" : "heart")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(isFav ? DSColor.textPrimary : DSColor.textSecondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func _onAppearUpdate() {
+        // Update the local favorite state when the view appears.
+        DispatchQueue.main.async {
+            let store = PlaylistStore(context)
+            self.isFav = store.isFavorite(catalogID: catalogID)
+        }
     }
 }
