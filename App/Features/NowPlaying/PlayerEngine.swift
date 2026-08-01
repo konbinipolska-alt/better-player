@@ -16,7 +16,7 @@ final class PlayerEngine {
     // Scrub state.
     private(set) var isScrubbing = false
     private(set) var scrubTargetTime: Double = 0
-    private(set) var scrubRate: ScrubRate = .hiSpeed
+    private(set) var scrubRate: ScrubRate = .base
 
     /// Cover art for the current track (its own embedded art, else the shared cover).
     private(set) var artwork: UIImage?
@@ -101,7 +101,7 @@ final class PlayerEngine {
     func beginScrub() {
         isScrubbing = true
         scrubTargetTime = currentTime
-        scrubRate = .hiSpeed
+        scrubRate = .base
     }
 
     /// Update the scrub target only — the audio is NOT seeked here, so there's no

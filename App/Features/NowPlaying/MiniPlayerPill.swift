@@ -16,7 +16,7 @@ struct MiniPlayerPill: View {
 
     private let height: CGFloat = 68
     private let baseSecondsPerPoint: Double = 0.25
-    private let holdDelay: TimeInterval = 0.2
+    private let holdDelay: TimeInterval = 0.32
 
     // Gesture state.
     @State private var gestureBegan = false
@@ -25,7 +25,7 @@ struct MiniPlayerPill: View {
     @State private var lastWidth: CGFloat = 0
     @State private var startX: CGFloat = 0
     @State private var holdWork: DispatchWorkItem?
-    @State private var lastRate: ScrubRate = .hiSpeed
+    @State private var lastRate: ScrubRate = .base
 
     var body: some View {
         GeometryReader { geo in
@@ -130,7 +130,7 @@ struct MiniPlayerPill: View {
                 // Ended before the hold fired → a quick gesture: flick or tap.
                 let w = value.translation.width
                 let h = value.translation.height
-                if abs(w) > 30 && abs(w) > abs(h) {
+                if abs(w) > 64 && abs(w) > abs(h) {
                     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                     w < 0 ? engine.next() : engine.previous()
                 } else if abs(w) < 12 && abs(h) < 12 {
@@ -157,7 +157,7 @@ struct MiniPlayerPill: View {
             guard gestureBegan, !didScrub else { return }
             didScrub = true
             lastWidth = curWidth
-            lastRate = .hiSpeed
+            lastRate = .base
             engine.beginScrub()
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }

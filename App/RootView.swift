@@ -44,7 +44,7 @@ struct RootView: View {
             .background(DSColor.canvas.ignoresSafeArea())
             .overlay(alignment: .bottom) {
                 ZStack(alignment: .bottom) {
-                    BottomScrim(height: 112)   // pill bottom(20) + height(68) + 24pt fade-out
+                    BottomScrim(height: 150)   // dark colour gradient (no blur), reaching higher
                     MiniPlayerPill(engine: engine, onTapExpand: { showFullPlayer = true })
                         .padding(.horizontal, DSSpacing.lg)
                         .padding(.bottom, 20)
@@ -119,19 +119,11 @@ private struct TimeReadout: View {
 private struct BottomScrim: View {
     let height: CGFloat
     var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .mask(
-                    LinearGradient(colors: [.black, .clear],
-                                   startPoint: .bottom, endPoint: .top)
-                )
-            LinearGradient(colors: [DSColor.canvas, DSColor.canvas.opacity(0)],
-                           startPoint: .bottom, endPoint: .top)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: height)
-        .allowsHitTesting(false)
+        LinearGradient(colors: [DSColor.canvas, DSColor.canvas.opacity(0)],
+                       startPoint: .bottom, endPoint: .top)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .allowsHitTesting(false)
     }
 }
 
