@@ -17,6 +17,11 @@ struct PlaylistDetailView: View {
     @State private var editingName = ""
     @FocusState private var nameFocused: Bool
 
+    /// Reorder mode for the track list. `hasMoved` flips the reorder glyph to a
+    /// checkmark once the first successful drag lands.
+    @State private var isReordering = false
+    @State private var hasMoved = false
+
     /// Observe the Favorites playlist so the per-row toggle icon (and the
     /// dashboard's "N songs" count) update the instant membership changes.
     @Query(filter: #Predicate<Playlist> { $0.isFavorites }) private var favorites: [Playlist]
@@ -33,7 +38,11 @@ struct PlaylistDetailView: View {
                 header
                     .padding(.horizontal, DSSpacing.xl)
                     .padding(.top, DSSpacing.md)
-                    .padding(.bottom, DSSpacing.lg)
+                    .padding(.bottom, DSSpacing.sm)
+
+                controlRow
+                    .padding(.horizontal, DSSpacing.xl)
+                    .padding(.bottom, DSSpacing.sm)
 
                 tracks
             }
@@ -88,18 +97,57 @@ struct PlaylistDetailView: View {
         }
     }
 
+    // MARK: Control row
+
+    /// Compact, right-aligned row of two chrome-less icon buttons just above the
+    /// track list: cycle the player's playback mode, and toggle reorder mode.
+    private var controlRow: some View {
+        HStack(spacing: DSSpacing.sm) {
+            Spacer(minLength: 0)
+
+            IconButton(systemName: playbackModeIcon, tint: playbackModeTint) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                engine.cyclePlaybackMode()
+            }
+
+            IconButton(systemName: reorderIcon,
+                       tint: isReordering ? DSColor.textPrimary : DSColor.textSecondary) {
+                toggleReorder()
+            }
+        }
+    }
+
+    private var playbackModeIcon: String {
+        switch engine.playbackMode {
+        case .loopAll: return "repeat"
+        case .loopOne: return "repeat.1"
+        case .shuffle: return "shuffle"
+        }
+    }
+
+    /// Dim tint for the default (loopAll); primary for active non-default modes.
+    private var playbackModeTint: Color {
+        engine.playbackMode == .loopAll ? DSColor.textTertiary : DSColor.textPrimary
+    }
+
+    /// Arrows until the first move lands, then a checkmark ("done" affordance).
+    private var reorderIcon: String {
+        (isReordering && hasMoved) ? "checkmark" : "arrow.up.arrow.down"
+    }
+
     // MARK: Tracks
 
     private var tracks: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                let items = playlist.orderedItems
-                ForEach(items) { item in
+        let items = playlist.orderedItems
+        return List {
+            ForEach(items) { item in
+                VStack(spacing: 0) {
                     TrackRowView(
                         engine: engine,
                         item: item,
                         isCurrent: isCurrent(item),
                         isFavorite: favoriteIDs.contains(item.catalogID),
+                        isReordering: isReordering,
                         onTap: { play(item) },
                         onToggleFavorite: { toggleFavorite(item) }
                     )
@@ -107,9 +155,23 @@ struct PlaylistDetailView: View {
                         DSDivider().padding(.leading, 76)
                     }
                 }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
-            .padding(.bottom, 160)
+            .onMove(perform: moveRows)
+
+            // Bottom breathing room so the mini-player pill never overlaps rows.
+            Color.clear
+                .frame(height: 160)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.editMode, .constant(isReordering ? .active : .inactive))
+        .animation(DSMotion.quick, value: isReordering)
     }
 
     // MARK: Menu
@@ -130,6 +192,28 @@ struct PlaylistDetailView: View {
             .padding(.top, 52)
         }
         .transition(.opacity)
+    }
+
+    // MARK: Reorder
+
+    private func toggleReorder() {
+        if isReordering {
+            withAnimation(DSMotion.quick) { isReordering = false }
+        } else {
+            hasMoved = false
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(DSMotion.quick) { isReordering = true }
+        }
+    }
+
+    /// Persist a drag immediately so the new order survives relaunch. Maps
+    /// SwiftUI's insertion-index semantics onto `store.move(in:from:to:)`.
+    private func moveRows(from source: IndexSet, to destination: Int) {
+        guard let s = source.first else { return }
+        let d = destination > s ? destination - 1 : destination
+        store.move(in: playlist, from: s, to: d)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        hasMoved = true
     }
 
     // MARK: Actions
@@ -186,12 +270,15 @@ private struct TrackRowView: View {
     let item: PlaylistItem
     let isCurrent: Bool
     let isFavorite: Bool
+    /// While reordering, rows are drag-only: tap-to-play and the favorite toggle
+    /// are disabled.
+    let isReordering: Bool
     let onTap: () -> Void
     let onToggleFavorite: () -> Void
 
     var body: some View {
         HStack(spacing: DSSpacing.md) {
-            // Row body: tapping anywhere here plays the track.
+            // Row body: tapping anywhere here plays the track (disabled while reordering).
             HStack(spacing: DSSpacing.md) {
                 thumb
                 VStack(alignment: .leading, spacing: 2) {
@@ -207,10 +294,12 @@ private struct TrackRowView: View {
                 Spacer(minLength: DSSpacing.sm)
             }
             .contentShape(Rectangle())
-            .onTapGesture { onTap() }
+            .onTapGesture { if !isReordering { onTap() } }
 
-            // Trailing slot: favorite add/remove toggle (its own hit target).
-            favoriteToggle
+            // Trailing slot: favorite add/remove toggle (hidden while reordering).
+            if !isReordering {
+                favoriteToggle
+            }
         }
         .padding(.horizontal, DSSpacing.xl)
         .padding(.vertical, DSSpacing.sm)

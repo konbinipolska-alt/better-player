@@ -3,6 +3,16 @@ import UIKit
 import Observation
 import AVFoundation
 
+/// How the queue advances when a track finishes playing.
+enum PlaybackMode {
+    /// Advance to the next track, wrapping to the start at the end.
+    case loopAll
+    /// Replay the current track on finish.
+    case loopOne
+    /// Pick a random next track on finish.
+    case shuffle
+}
+
 /// Drives playback for the UI. For local testing it plays bundled audio through
 /// `AVAudioPlayer`. Phase 3 swaps the audio source for `ApplicationMusicPlayer`
 /// (MusicKit) behind this same surface.
@@ -12,6 +22,10 @@ final class PlayerEngine {
     private(set) var track: NowPlayingTrack
     private(set) var currentTime: Double = 0
     private(set) var isPlaying: Bool = false
+
+    /// Governs how the queue advances when a track finishes. Default matches the
+    /// prior behavior (wrap to the start at the end).
+    var playbackMode: PlaybackMode = .loopAll
 
     // Scrub state.
     private(set) var isScrubbing = false
@@ -60,7 +74,7 @@ final class PlayerEngine {
         }
         track = queue[0]
         configureSession()
-        delegate.onFinish = { [weak self] in self?.next() }
+        delegate.onFinish = { [weak self] in self?.advanceOnFinish() }
         load(index: 0, autoplay: false)   // silent on launch; user taps play
         startDisplay()
     }
@@ -87,6 +101,32 @@ final class PlayerEngine {
             seekSeconds(0)
         } else {
             load(index: index - 1, autoplay: true)
+        }
+    }
+
+    /// Advance when the current track finishes, honoring the playback mode.
+    /// (User-driven skips still use `next()`, which always advances.)
+    private func advanceOnFinish() {
+        switch playbackMode {
+        case .loopAll:
+            next()
+        case .loopOne:
+            load(index: index, autoplay: true)
+        case .shuffle:
+            let count = queue.count
+            guard count > 1 else { load(index: index, autoplay: true); return }
+            var r = index
+            while r == index { r = Int.random(in: 0..<count) }
+            load(index: r, autoplay: true)
+        }
+    }
+
+    /// Cycle loopAll → loopOne → shuffle → loopAll.
+    func cyclePlaybackMode() {
+        switch playbackMode {
+        case .loopAll: playbackMode = .loopOne
+        case .loopOne: playbackMode = .shuffle
+        case .shuffle: playbackMode = .loopAll
         }
     }
 
