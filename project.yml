@@ -17,7 +17,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: ""            # set by user in Xcode → Signing & Capabilities
+    DEVELOPMENT_TEAM: "96A754WM9L" # Apple Developer team (FILIP MICHAL BLASZCZYK)
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 
 targets:
