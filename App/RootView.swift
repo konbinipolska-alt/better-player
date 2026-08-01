@@ -2,10 +2,12 @@ import SwiftUI
 import DesignSystem
 
 /// Top-level shell: three destinations (Playlists / Search / Now Playing)
-/// with the persistent mini-player pill docked above the tab bar.
+/// with the persistent, interactive mini-player pill docked above the tab bar.
 struct RootView: View {
     enum Tab: Hashable { case playlists, search, nowPlaying }
     @State private var tab: Tab = .playlists
+    @State private var engine = PlayerEngine()
+    @State private var showFullPlayer = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -23,11 +25,12 @@ struct RootView: View {
         }
         .tint(DSColor.accent)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            // Static preview of the signature pill. The gesture engine + real
-            // playback arrive in Phase 3; this validates the design tokens now.
-            MiniPlayerPill(track: .sample, progress: 0.38)
+            MiniPlayerPill(engine: engine, onTapExpand: { showFullPlayer = true })
                 .padding(.horizontal, DSSpacing.md)
                 .padding(.bottom, DSSpacing.sm)
+        }
+        .fullScreenCover(isPresented: $showFullPlayer) {
+            FullPlayerView(engine: engine)
         }
     }
 }
