@@ -1,18 +1,13 @@
 import Foundation
 
-/// Lightweight, provider-agnostic representation of what's currently loaded in
-/// the player. Real data is mapped from MusicKit in Phase 3; a `.sample` is used
-/// to drive the static pill during scaffolding.
+/// Lightweight, provider-agnostic representation of what's loaded in the player.
+/// `resource` is the base name of a bundled audio file used for local testing;
+/// Phase 3 maps these from MusicKit instead.
 struct NowPlayingTrack: Equatable, Identifiable {
     let id: String
     let title: String
     let artist: String
-    let duration: Double   // seconds
-
-    static let sample = NowPlayingTrack(
-        id: "sample",
-        title: "Nightlight",
-        artist: "Konbini",
-        duration: 214
-    )
+    /// Bundled audio file base name (no extension), or nil once real catalog
+    /// items back the player.
+    let resource: String?
 }

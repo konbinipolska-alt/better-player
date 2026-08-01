@@ -1,36 +1,26 @@
 import SwiftUI
 import DesignSystem
 
-/// Temporary scaffolding screen — a titled, on-brand placeholder used until each
-/// feature is implemented. Removed as real screens land.
+/// Temporary scaffolding screen — an on-brand placeholder body used until each
+/// feature is implemented. The section title now lives in the header nav, so
+/// this only renders the descriptive body (SF Symbol + mono note), centered.
 struct PlaceholderScreen: View {
-    let eyebrow: String
-    let title: String
     let note: String
     let systemImage: String
 
     var body: some View {
         ZStack {
             DSColor.canvas.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                Eyebrow(eyebrow)
-                Text(title)
-                    .font(DSFont.display)
-                    .foregroundStyle(DSColor.textPrimary)
-                Spacer()
-                VStack(spacing: DSSpacing.md) {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 34, weight: .regular))
-                        .foregroundStyle(DSColor.textTertiary)
-                    Text(note)
-                        .font(DSFont.mono)
-                        .foregroundStyle(DSColor.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                Spacer()
-                Spacer()
+            VStack(spacing: DSSpacing.md) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 34, weight: .regular))
+                    .foregroundStyle(DSColor.textTertiary)
+                Text(note)
+                    .font(DSFont.mono)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .multilineTextAlignment(.center)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(DSSpacing.xl)
         }
     }

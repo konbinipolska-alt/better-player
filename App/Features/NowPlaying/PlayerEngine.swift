@@ -1,78 +1,74 @@
 import SwiftUI
 import Observation
+import AVFoundation
 
-/// Drives playback state for the UI. During scaffolding this is a **simulated
-/// clock** so the scrub interaction can be built and felt before MusicKit is
-/// wired in. Phase 3 swaps the internal clock for `ApplicationMusicPlayer`
-/// (currentTime/duration/transport) without changing this surface.
+/// Drives playback for the UI. For local testing it plays bundled, procedurally
+/// generated samples through `AVAudioPlayer` — so scrubbing is *audible*. Phase 3
+/// swaps the audio source for `ApplicationMusicPlayer` (MusicKit) behind this
+/// same surface.
 @MainActor
 @Observable
 final class PlayerEngine {
     private(set) var track: NowPlayingTrack
-    private(set) var currentTime: Double
-    private(set) var isPlaying: Bool = true
+    private(set) var currentTime: Double = 0
+    private(set) var isPlaying: Bool = false
 
     // Scrub state.
     private(set) var isScrubbing = false
     private(set) var scrubTargetTime: Double = 0
     private(set) var scrubRate: ScrubRate = .hiSpeed
 
-    var duration: Double { track.duration }
+    var duration: Double { player?.duration ?? 0 }
 
-    /// Fraction to render in the pill: the scrub target while scrubbing,
-    /// otherwise the live playhead.
+    /// Fraction to render in the pill: the scrub target while scrubbing, else the playhead.
     var displayProgress: Double {
-        let t = isScrubbing ? scrubTargetTime : currentTime
-        return duration > 0 ? max(0, min(1, t / duration)) : 0
+        guard duration > 0 else { return 0 }
+        return max(0, min(1, displayTime / duration))
     }
-
     var displayTime: Double { isScrubbing ? scrubTargetTime : currentTime }
 
-    // Simulated-clock backing.
-    private var timer: Timer?
+    private var player: AVAudioPlayer?
+    private var display: Timer?
     private let queue: [NowPlayingTrack]
-    private var index: Int
+    private var index = 0
+    private let delegate = PlayerDelegate()
 
     init() {
-        let q: [NowPlayingTrack] = [
-            NowPlayingTrack(id: "1", title: "Nightlight", artist: "Konbini", duration: 214),
-            NowPlayingTrack(id: "2", title: "Amber Static", artist: "Konbini", duration: 187),
-            NowPlayingTrack(id: "3", title: "Low Orbit", artist: "Konbini", duration: 246),
+        queue = [
+            NowPlayingTrack(id: "1", title: "Nightlight",   artist: "Konbini", resource: "sample_nightlight"),
+            NowPlayingTrack(id: "2", title: "Amber Static", artist: "Konbini", resource: "sample_amber"),
+            NowPlayingTrack(id: "3", title: "Low Orbit",    artist: "Konbini", resource: "sample_orbit"),
         ]
-        self.queue = q
-        self.index = 0
-        self.track = q[0]
-        self.currentTime = 82   // start mid-track so the pill shows progress
-        startClock()
+        track = queue[0]
+        configureSession()
+        delegate.onFinish = { [weak self] in self?.next() }
+        load(index: 0, autoplay: false)   // silent on launch; user taps play
+        startDisplay()
     }
 
     // MARK: Transport
 
-    func togglePlayPause() {
-        isPlaying.toggle()
-        isPlaying ? startClock() : stopClock()
+    func play() {
+        guard player != nil else { return }
+        player?.play()
+        isPlaying = true
     }
 
-    func next() {
-        index = (index + 1) % queue.count
-        loadCurrent()
+    func pause() {
+        player?.pause()
+        isPlaying = false
     }
+
+    func togglePlayPause() { isPlaying ? pause() : play() }
+
+    func next() { load(index: index + 1, autoplay: true) }
 
     func previous() {
-        // If we're a few seconds in, restart the track (like most players);
-        // otherwise go to the previous one.
         if currentTime > 3 {
-            currentTime = 0
+            seekSeconds(0)
         } else {
-            index = (index - 1 + queue.count) % queue.count
-            loadCurrent()
+            load(index: index - 1, autoplay: true)
         }
-    }
-
-    private func loadCurrent() {
-        track = queue[index]
-        currentTime = 0
-        if isPlaying { startClock() }
     }
 
     // MARK: Scrubbing
@@ -81,48 +77,82 @@ final class PlayerEngine {
         isScrubbing = true
         scrubTargetTime = currentTime
         scrubRate = .hiSpeed
-        stopClock()
     }
 
-    /// Apply an incremental horizontal delta (points) at the current rate, and
-    /// update the rate tier from upward vertical travel (points, positive = up).
+    /// Incremental horizontal delta (points) at the current rate; rate tier from
+    /// upward vertical travel. Seeks the player live so the scrub is audible.
     func updateScrub(horizontalDelta: CGFloat, verticalUp: CGFloat, secondsPerPoint: Double) {
         scrubRate = ScrubRate.forVerticalOffset(verticalUp)
-        let deltaSeconds = Double(horizontalDelta) * secondsPerPoint * scrubRate.factor
-        scrubTargetTime = max(0, min(duration, scrubTargetTime + deltaSeconds))
+        let delta = Double(horizontalDelta) * secondsPerPoint * scrubRate.factor
+        scrubTargetTime = max(0, min(duration, scrubTargetTime + delta))
+        player?.currentTime = scrubTargetTime
+        currentTime = scrubTargetTime
     }
 
     func endScrub(commit: Bool) {
-        if commit { currentTime = scrubTargetTime }
+        if commit { seekSeconds(scrubTargetTime) }
         isScrubbing = false
-        if isPlaying { startClock() }
     }
 
     /// Direct seek by fraction (0…1) — used by the full player's scrub bar.
-    func seek(toFraction f: Double) {
-        currentTime = max(0, min(duration, f * duration))
+    func seek(toFraction f: Double) { seekSeconds(f * duration) }
+
+    private func seekSeconds(_ t: Double) {
+        let c = max(0, min(duration, t))
+        player?.currentTime = c
+        currentTime = c
     }
 
-    // MARK: Simulated clock
+    // MARK: Loading
 
-    private func startClock() {
-        stopClock()
-        guard isPlaying else { return }
-        let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick(0.25) }
+    private func load(index i: Int, autoplay: Bool) {
+        let count = queue.count
+        index = ((i % count) + count) % count
+        track = queue[index]
+
+        let url = track.resource.flatMap {
+            Bundle.main.url(forResource: $0, withExtension: "m4a")
+                ?? Bundle.main.url(forResource: $0, withExtension: "wav")
+        }
+        if let url, let p = try? AVAudioPlayer(contentsOf: url) {
+            p.delegate = delegate
+            p.prepareToPlay()
+            player = p
+        } else {
+            player = nil
+        }
+        currentTime = 0
+        if autoplay { play() } else { isPlaying = false }
+    }
+
+    private func configureSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default)
+        try? session.setActive(true)
+    }
+
+    // MARK: Display refresh
+
+    private func startDisplay() {
+        display?.invalidate()
+        let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
         }
         RunLoop.main.add(t, forMode: .common)
-        timer = t
+        display = t
     }
 
-    private func stopClock() {
-        timer?.invalidate()
-        timer = nil
+    private func refresh() {
+        guard let p = player, !isScrubbing else { return }
+        currentTime = p.currentTime
+        if isPlaying != p.isPlaying { isPlaying = p.isPlaying }
     }
+}
 
-    private func tick(_ dt: Double) {
-        guard isPlaying, !isScrubbing else { return }
-        currentTime += dt
-        if currentTime >= duration { next() }
+/// AVAudioPlayer delegate bridged to a main-actor callback (advance on finish).
+private final class PlayerDelegate: NSObject, AVAudioPlayerDelegate {
+    var onFinish: (() -> Void)?
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.onFinish?() }
     }
 }

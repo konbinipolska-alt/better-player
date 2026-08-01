@@ -3,8 +3,6 @@ import SwiftUI
 struct PlaylistsView: View {
     var body: some View {
         PlaceholderScreen(
-            eyebrow: "Your Music",
-            title: "Playlists",
             note: "Your library and playlists land here.\nPhase 4.",
             systemImage: "square.stack"
         )
