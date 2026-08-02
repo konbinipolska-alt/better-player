@@ -7,10 +7,6 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
-packages:
-  DesignSystem:
-    path: Packages/DesignSystem
-
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -26,28 +22,21 @@ targets:
     platform: iOS
     sources:
       - path: App
-    dependencies:
-      - package: DesignSystem
-        product: DesignSystem
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: pl.konbini.betterplayer
         PRODUCT_NAME: BetterPlayer
         TARGETED_DEVICE_FAMILY: "1"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
     info:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Better Player
-        UILaunchScreen:
-          UIColorName: LaunchBackground
+        # Empty launch screen → plain background (no asset dependency).
+        UILaunchScreen: {}
         UIBackgroundModes:
           - audio
-        NSAppleMusicUsageDescription: "Better Player uses Apple Music to play and organize your library."
+        NSAppleMusicUsageDescription: "Better Player uses Apple Music to show and play your library and playlists."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
-        # Allow ProMotion displays to exceed 60fps for the pill ⇄ full morph.
-        CADisableMinimumFrameDurationOnPhone: true
